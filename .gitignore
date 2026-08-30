@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.db
+*.sqlite
+*.sqlite3
+.vscode/
+.env
+.pytest_cache/
+banking_system_backup.py
