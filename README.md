@@ -36,6 +36,5 @@ BankingSystem/
 
 ### Deposit Money
 ![Deposit Money](screenshots/deposit.png)
-
 ### Transaction History
 ![Transaction History](screenshots/transaction_history.png)
