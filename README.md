@@ -29,3 +29,13 @@ BankingSystem/
 ├── database.py
 ├── README.md
 └── .gitignore
+## Screenshots
+
+### Main Menu
+![Main Menu](screenshots/main_menu.png)
+
+### Deposit Money
+![Deposit Money](screenshots/deposit.png)
+
+### Transaction History
+![Transaction History](screenshots/transaction_history.png)
