@@ -6,4 +6,3 @@ __pycache__/
 .vscode/
 .env
 .pytest_cache/
-banking_system_backup.py

@@ -1,349 +1,679 @@
+import hashlib
+import sqlite3
+from decimal import Decimal, InvalidOperation
+from getpass import getpass
+
 from database import get_connection, initialize_database
 
 
+# ============================================================
+# HELPER FUNCTIONS
+# ============================================================
+
+def hash_pin(pin):
+    """
+    Convert the PIN into a SHA-256 hash.
+
+    Note:
+    This is suitable for demonstrating hashing in a student project.
+    Real banking systems should use a password hashing algorithm
+    such as Argon2id or bcrypt with appropriate security controls.
+    """
+    return hashlib.sha256(pin.encode("utf-8")).hexdigest()
+
+
+def format_money(paise):
+    """
+    Convert paise into a formatted Indian Rupee amount.
+
+    Example:
+    500000 paise -> ₹5,000.00
+    """
+    rupees = Decimal(paise) / Decimal(100)
+    return f"₹{rupees:,.2f}"
+
+
+def money_to_paise(amount):
+    """
+    Convert a monetary amount into integer paise.
+
+    Example:
+    500.50 -> 50050
+    """
+
+    try:
+        value = Decimal(str(amount))
+
+    except InvalidOperation:
+        raise ValueError("Invalid amount.")
+
+    if value <= 0:
+        raise ValueError("Amount must be greater than zero.")
+
+    # Only allow maximum 2 decimal places
+    if value.as_tuple().exponent < -2:
+        raise ValueError("Amount can have maximum 2 decimal places.")
+
+    paise = int(value * 100)
+
+    return paise
+
+
+def pause():
+    """
+    Pause before returning to the main menu.
+    """
+    input("\nPress Enter to continue...")
+
+
+def get_account_number():
+    """
+    Ask for and validate an account number.
+    """
+
+    account_number = input("Enter account number: ").strip()
+
+    if not account_number.isdigit():
+        print("\nInvalid account number.")
+        return None
+
+    return int(account_number)
+
+
+def get_amount():
+    """
+    Ask the user for a monetary amount.
+    """
+
+    amount = input("Enter amount: ₹").strip()
+
+    try:
+        return money_to_paise(amount)
+
+    except ValueError as error:
+        print(f"\n{error}")
+        return None
+
+
+# ============================================================
+# ACCOUNT NUMBER
+# ============================================================
+
 def generate_account_number():
-    """Generate a new unique account number."""
+    """
+    Generate the next account number.
+    """
+
     connection = get_connection()
-    cursor = connection.cursor()
 
-    cursor.execute("""
-        SELECT MAX(account_number)
-        FROM accounts
-    """)
+    try:
+        cursor = connection.cursor()
 
-    result = cursor.fetchone()[0]
-    connection.close()
+        cursor.execute("""
+            SELECT MAX(account_number)
+            FROM accounts
+        """)
 
-    if result is None:
-        return 100001
+        result = cursor.fetchone()[0]
 
-    return result + 1
+        if result is None:
+            return 100001
 
+        return result + 1
+
+    except sqlite3.Error as error:
+        print(f"Database error: {error}")
+        return None
+
+    finally:
+        connection.close()
+
+
+# ============================================================
+# GET ACCOUNT
+# ============================================================
+
+def get_account(account_number):
+    """
+    Find an account by account number.
+    """
+
+    connection = get_connection()
+
+    try:
+        cursor = connection.cursor()
+
+        cursor.execute("""
+            SELECT
+                account_number,
+                name,
+                pin_hash,
+                balance_paise,
+                created_at
+            FROM accounts
+            WHERE account_number = ?
+        """, (account_number,))
+
+        return cursor.fetchone()
+
+    except sqlite3.Error as error:
+        print(f"Database error: {error}")
+        return None
+
+    finally:
+        connection.close()
+
+
+# ============================================================
+# VERIFY PIN
+# ============================================================
+
+def verify_account():
+    """
+    Ask for account number and PIN.
+
+    Returns the account if authentication is successful.
+    """
+
+    print("\n--- Account Login ---")
+
+    account_number = get_account_number()
+
+    if account_number is None:
+        return None
+
+    account = get_account(account_number)
+
+    if account is None:
+        print("\nAccount not found.")
+        return None
+
+    pin = getpass("Enter 4-digit PIN: ").strip()
+
+    if len(pin) != 4 or not pin.isdigit():
+        print("\nPIN must contain exactly 4 digits.")
+        return None
+
+    entered_hash = hash_pin(pin)
+
+    if entered_hash != account["pin_hash"]:
+        print("\nIncorrect PIN.")
+        return None
+
+    print(f"\nWelcome, {account['name']}!")
+
+    return account
+
+
+# ============================================================
+# CREATE ACCOUNT
+# ============================================================
 
 def create_account():
-    """Create a new bank account."""
-    print("\n--- Create Account ---")
+    """
+    Create a new bank account.
+    """
+
+    print("\n" + "=" * 45)
+    print(" CREATE BANK ACCOUNT")
+    print("=" * 45)
 
     name = input("Enter your name: ").strip()
 
     if not name:
         print("\nName cannot be empty.")
-        input("\nPress Enter to return to the main menu...")
+        pause()
         return
 
-    pin = input("Create a 4-digit PIN: ").strip()
+    # PIN
+    pin = getpass("Create a 4-digit PIN: ").strip()
 
     if len(pin) != 4 or not pin.isdigit():
         print("\nPIN must contain exactly 4 digits.")
-        input("\nPress Enter to return to the main menu...")
+        pause()
         return
 
-    confirm_pin = input("Confirm your PIN: ").strip()
+    confirm_pin = getpass("Confirm your PIN: ").strip()
 
     if pin != confirm_pin:
         print("\nPINs do not match.")
-        input("\nPress Enter to return to the main menu...")
+        pause()
         return
 
+    # Initial balance
+    print("\nInitial balance")
+
+    balance_input = input("Enter initial balance: ₹").strip()
+
     try:
-        initial_balance = float(
-            input("Enter initial balance: ₹")
-        )
+        initial_balance = Decimal(balance_input)
 
         if initial_balance < 0:
             print("\nInitial balance cannot be negative.")
-            input("\nPress Enter to return to the main menu...")
+            pause()
             return
 
-    except ValueError:
+        if initial_balance.as_tuple().exponent < -2:
+            print("\nAmount can have maximum 2 decimal places.")
+            pause()
+            return
+
+        initial_balance_paise = int(initial_balance * 100)
+
+    except InvalidOperation:
         print("\nPlease enter a valid amount.")
-        input("\nPress Enter to return to the main menu...")
+        pause()
         return
 
     account_number = generate_account_number()
 
+    if account_number is None:
+        pause()
+        return
+
+    pin_hash = hash_pin(pin)
+
     connection = get_connection()
-    cursor = connection.cursor()
 
-    cursor.execute("""
-        INSERT INTO accounts
-        (account_number, name, pin, balance)
-        VALUES (?, ?, ?, ?)
-    """, (
-        account_number,
-        name,
-        pin,
-        initial_balance
-    ))
+    try:
+        cursor = connection.cursor()
 
-    if initial_balance > 0:
+        # Create account
         cursor.execute("""
-            INSERT INTO transactions
-            (account_number, transaction_type, amount, balance_after)
+            INSERT INTO accounts (
+                account_number,
+                name,
+                pin_hash,
+                balance_paise
+            )
             VALUES (?, ?, ?, ?)
         """, (
             account_number,
-            "Initial Deposit",
-            initial_balance,
-            initial_balance
+            name,
+            pin_hash,
+            initial_balance_paise
         ))
 
-    connection.commit()
-    connection.close()
+        # Add initial deposit to transaction history
+        if initial_balance_paise > 0:
 
-    print("\nAccount created successfully!")
-    print(f"Your Account Number: {account_number}")
+            cursor.execute("""
+                INSERT INTO transactions (
+                    account_number,
+                    transaction_type,
+                    amount_paise,
+                    balance_after_paise
+                )
+                VALUES (?, ?, ?, ?)
+            """, (
+                account_number,
+                "Initial Deposit",
+                initial_balance_paise,
+                initial_balance_paise
+            ))
 
-    input("\nPress Enter to return to the main menu...")
+        connection.commit()
+
+        print("\nAccount created successfully!")
+        print("-" * 45)
+        print(f"Account Holder : {name}")
+        print(f"Account Number : {account_number}")
+        print(f"Initial Balance: {format_money(initial_balance_paise)}")
+        print("-" * 45)
+
+    except sqlite3.IntegrityError:
+        connection.rollback()
+        print("\nCould not create account. Account number already exists.")
+
+    except sqlite3.Error as error:
+        connection.rollback()
+        print(f"\nDatabase error: {error}")
+
+    finally:
+        connection.close()
+
+    pause()
 
 
-def get_account(account_number):
-    """Find an account using account number."""
-    connection = get_connection()
-    cursor = connection.cursor()
-
-    cursor.execute("""
-        SELECT *
-        FROM accounts
-        WHERE account_number = ?
-    """, (account_number,))
-
-    account = cursor.fetchone()
-
-    connection.close()
-
-    return account
-
+# ============================================================
+# DEPOSIT
+# ============================================================
 
 def deposit():
-    """Deposit money into an account."""
-    print("\n--- Deposit Money ---")
+    """
+    Deposit money into an account.
+    """
 
-    account_number = input("Enter account number: ").strip()
+    print("\n" + "=" * 45)
+    print(" DEPOSIT MONEY")
+    print("=" * 45)
 
-    if not account_number.isdigit():
-        print("\nInvalid account number.")
-        input("\nPress Enter to return to the main menu...")
-        return
-
-    account = get_account(int(account_number))
+    account = verify_account()
 
     if account is None:
-        print("\nAccount not found.")
-        input("\nPress Enter to return to the main menu...")
+        pause()
         return
 
-    try:
-        amount = float(
-            input("Enter deposit amount: ₹")
-        )
+    amount_paise = get_amount()
 
-    except ValueError:
-        print("\nPlease enter a valid amount.")
-        input("\nPress Enter to return to the main menu...")
+    if amount_paise is None:
+        pause()
         return
-
-    if amount <= 0:
-        print("\nAmount must be greater than zero.")
-        input("\nPress Enter to return to the main menu...")
-        return
-
-    new_balance = account["balance"] + amount
 
     connection = get_connection()
-    cursor = connection.cursor()
 
-    cursor.execute("""
-        UPDATE accounts
-        SET balance = ?
-        WHERE account_number = ?
-    """, (
-        new_balance,
-        int(account_number)
-    ))
+    try:
+        cursor = connection.cursor()
 
-    cursor.execute("""
-        INSERT INTO transactions
-        (account_number, transaction_type, amount, balance_after)
-        VALUES (?, ?, ?, ?)
-    """, (
-        int(account_number),
-        "Deposit",
-        amount,
-        new_balance
-    ))
+        # Get latest balance directly from database
+        cursor.execute("""
+            SELECT balance_paise
+            FROM accounts
+            WHERE account_number = ?
+        """, (account["account_number"],))
 
-    connection.commit()
-    connection.close()
+        result = cursor.fetchone()
 
-    print("\nDeposit successful!")
-    print(f"Current Balance: ₹{new_balance:.2f}")
+        if result is None:
+            print("\nAccount not found.")
+            connection.rollback()
+            pause()
+            return
 
-    input("\nPress Enter to return to the main menu...")
+        current_balance = result["balance_paise"]
 
+        new_balance = current_balance + amount_paise
+
+        # Update balance
+        cursor.execute("""
+            UPDATE accounts
+            SET balance_paise = ?
+            WHERE account_number = ?
+        """, (
+            new_balance,
+            account["account_number"]
+        ))
+
+        # Add transaction
+        cursor.execute("""
+            INSERT INTO transactions (
+                account_number,
+                transaction_type,
+                amount_paise,
+                balance_after_paise
+            )
+            VALUES (?, ?, ?, ?)
+        """, (
+            account["account_number"],
+            "Deposit",
+            amount_paise,
+            new_balance
+        ))
+
+        connection.commit()
+
+        print("\nDeposit successful!")
+        print(f"Deposited : {format_money(amount_paise)}")
+        print(f"New Balance: {format_money(new_balance)}")
+
+    except sqlite3.Error as error:
+        connection.rollback()
+        print(f"\nTransaction failed: {error}")
+
+    finally:
+        connection.close()
+
+    pause()
+
+
+# ============================================================
+# WITHDRAW
+# ============================================================
 
 def withdraw():
-    """Withdraw money from an account."""
-    print("\n--- Withdraw Money ---")
+    """
+    Withdraw money from an account.
+    """
 
-    account_number = input("Enter account number: ").strip()
+    print("\n" + "=" * 45)
+    print(" WITHDRAW MONEY")
+    print("=" * 45)
 
-    if not account_number.isdigit():
-        print("\nInvalid account number.")
-        input("\nPress Enter to return to the main menu...")
-        return
-
-    account = get_account(int(account_number))
+    account = verify_account()
 
     if account is None:
-        print("\nAccount not found.")
-        input("\nPress Enter to return to the main menu...")
+        pause()
         return
+
+    amount_paise = get_amount()
+
+    if amount_paise is None:
+        pause()
+        return
+
+    connection = get_connection()
 
     try:
-        amount = float(
-            input("Enter withdrawal amount: ₹")
-        )
+        cursor = connection.cursor()
 
-    except ValueError:
-        print("\nPlease enter a valid amount.")
-        input("\nPress Enter to return to the main menu...")
-        return
+        # Get latest balance
+        cursor.execute("""
+            SELECT balance_paise
+            FROM accounts
+            WHERE account_number = ?
+        """, (account["account_number"],))
 
-    if amount <= 0:
-        print("\nAmount must be greater than zero.")
-        input("\nPress Enter to return to the main menu...")
-        return
+        result = cursor.fetchone()
 
-    if amount > account["balance"]:
-        print("\nInsufficient balance.")
-        input("\nPress Enter to return to the main menu...")
-        return
+        if result is None:
+            print("\nAccount not found.")
+            connection.rollback()
+            pause()
+            return
 
-    new_balance = account["balance"] - amount
+        current_balance = result["balance_paise"]
 
-    connection = get_connection()
-    cursor = connection.cursor()
+        # Check balance
+        if amount_paise > current_balance:
+            print("\nInsufficient balance.")
+            print(f"Available Balance: {format_money(current_balance)}")
+            connection.rollback()
+            pause()
+            return
 
-    cursor.execute("""
-        UPDATE accounts
-        SET balance = ?
-        WHERE account_number = ?
-    """, (
-        new_balance,
-        int(account_number)
-    ))
+        new_balance = current_balance - amount_paise
 
-    cursor.execute("""
-        INSERT INTO transactions
-        (account_number, transaction_type, amount, balance_after)
-        VALUES (?, ?, ?, ?)
-    """, (
-        int(account_number),
-        "Withdrawal",
-        amount,
-        new_balance
-    ))
+        # Update balance
+        cursor.execute("""
+            UPDATE accounts
+            SET balance_paise = ?
+            WHERE account_number = ?
+        """, (
+            new_balance,
+            account["account_number"]
+        ))
 
-    connection.commit()
-    connection.close()
+        # Add transaction
+        cursor.execute("""
+            INSERT INTO transactions (
+                account_number,
+                transaction_type,
+                amount_paise,
+                balance_after_paise
+            )
+            VALUES (?, ?, ?, ?)
+        """, (
+            account["account_number"],
+            "Withdrawal",
+            amount_paise,
+            new_balance
+        ))
 
-    print("\nWithdrawal successful!")
-    print(f"Current Balance: ₹{new_balance:.2f}")
+        connection.commit()
 
-    input("\nPress Enter to return to the main menu...")
+        print("\nWithdrawal successful!")
+        print(f"Withdrawn  : {format_money(amount_paise)}")
+        print(f"New Balance: {format_money(new_balance)}")
 
+    except sqlite3.Error as error:
+        connection.rollback()
+        print(f"\nTransaction failed: {error}")
+
+    finally:
+        connection.close()
+
+    pause()
+
+
+# ============================================================
+# CHECK BALANCE
+# ============================================================
 
 def check_balance():
-    """Display account balance."""
-    print("\n--- Check Balance ---")
+    """
+    Display account balance.
+    """
 
-    account_number = input("Enter account number: ").strip()
+    print("\n" + "=" * 45)
+    print(" CHECK BALANCE")
+    print("=" * 45)
 
-    if not account_number.isdigit():
-        print("\nInvalid account number.")
-        input("\nPress Enter to return to the main menu...")
-        return
-
-    account = get_account(int(account_number))
+    account = verify_account()
 
     if account is None:
-        print("\nAccount not found.")
-        input("\nPress Enter to return to the main menu...")
-        return
-
-    print(f"\nAccount Holder: {account['name']}")
-    print(f"Account Number: {account['account_number']}")
-    print(f"Current Balance: ₹{account['balance']:.2f}")
-
-    input("\nPress Enter to return to the main menu...")
-
-
-def transaction_history():
-    """Display transaction history."""
-    print("\n--- Transaction History ---")
-
-    account_number = input("Enter account number: ").strip()
-
-    if not account_number.isdigit():
-        print("\nInvalid account number.")
-        input("\nPress Enter to return to the main menu...")
-        return
-
-    account = get_account(int(account_number))
-
-    if account is None:
-        print("\nAccount not found.")
-        input("\nPress Enter to return to the main menu...")
+        pause()
         return
 
     connection = get_connection()
-    cursor = connection.cursor()
 
-    cursor.execute("""
-        SELECT
-            transaction_type,
-            amount,
-            balance_after,
-            created_at
-        FROM transactions
-        WHERE account_number = ?
-        ORDER BY transaction_id DESC
-    """, (int(account_number),))
+    try:
+        cursor = connection.cursor()
 
-    transactions = cursor.fetchall()
+        cursor.execute("""
+            SELECT
+                name,
+                account_number,
+                balance_paise,
+                created_at
+            FROM accounts
+            WHERE account_number = ?
+        """, (account["account_number"],))
 
-    connection.close()
+        result = cursor.fetchone()
 
-    if not transactions:
-        print("\nNo transactions found.")
-        input("\nPress Enter to return to the main menu...")
+        if result is None:
+            print("\nAccount not found.")
+            return
+
+        print("\nAccount Details")
+        print("-" * 45)
+        print(f"Account Holder : {result['name']}")
+        print(f"Account Number : {result['account_number']}")
+        print(f"Current Balance: {format_money(result['balance_paise'])}")
+        print(f"Created At     : {result['created_at']}")
+        print("-" * 45)
+
+    except sqlite3.Error as error:
+        print(f"\nDatabase error: {error}")
+
+    finally:
+        connection.close()
+
+    pause()
+
+
+# ============================================================
+# TRANSACTION HISTORY
+# ============================================================
+
+def transaction_history():
+    """
+    Display transaction history for an account.
+    """
+
+    print("\n" + "=" * 45)
+    print(" TRANSACTION HISTORY")
+    print("=" * 45)
+
+    account = verify_account()
+
+    if account is None:
+        pause()
         return
 
-    print("\nTransaction History")
-    print("-" * 80)
+    connection = get_connection()
 
-    for transaction in transactions:
+    try:
+        cursor = connection.cursor()
+
+        cursor.execute("""
+            SELECT
+                transaction_id,
+                transaction_type,
+                amount_paise,
+                balance_after_paise,
+                created_at
+            FROM transactions
+            WHERE account_number = ?
+            ORDER BY transaction_id DESC
+        """, (account["account_number"],))
+
+        transactions = cursor.fetchall()
+
+        if not transactions:
+            print("\nNo transactions found.")
+            pause()
+            return
+
+        print()
+        print("-" * 90)
         print(
-            f"{transaction['created_at']} | "
-            f"{transaction['transaction_type']} | "
-            f"Amount: ₹{transaction['amount']:.2f} | "
-            f"Balance: ₹{transaction['balance_after']:.2f}"
+            f"{'ID':<5}"
+            f"{'TYPE':<20}"
+            f"{'AMOUNT':<18}"
+            f"{'BALANCE':<18}"
+            f"{'DATE':<20}"
         )
+        print("-" * 90)
 
-    print("-" * 80)
+        for transaction in transactions:
 
-    input("\nPress Enter to return to the main menu...")
+            print(
+                f"{transaction['transaction_id']:<5}"
+                f"{transaction['transaction_type']:<20}"
+                f"{format_money(transaction['amount_paise']):<18}"
+                f"{format_money(transaction['balance_after_paise']):<18}"
+                f"{transaction['created_at']:<20}"
+            )
 
+        print("-" * 90)
+
+    except sqlite3.Error as error:
+        print(f"\nDatabase error: {error}")
+
+    finally:
+        connection.close()
+
+    pause()
+
+
+# ============================================================
+# MAIN MENU
+# ============================================================
 
 def main():
-    """Main banking system menu."""
+    """
+    Main banking system menu.
+    """
+
     initialize_database()
 
     while True:
-        print("\n" + "=" * 40)
+
+        print("\n")
+        print("=" * 50)
         print("       BANKING MANAGEMENT SYSTEM")
-        print("=" * 40)
+        print("=" * 50)
 
         print("1. Create Account")
         print("2. Deposit Money")
@@ -352,30 +682,45 @@ def main():
         print("5. Transaction History")
         print("6. Exit")
 
-        choice = input("\nEnter your choice: ").strip()
+        print("=" * 50)
+
+        choice = input("Enter your choice: ").strip()
 
         if choice == "1":
+
             create_account()
 
         elif choice == "2":
+
             deposit()
 
         elif choice == "3":
+
             withdraw()
 
         elif choice == "4":
+
             check_balance()
 
         elif choice == "5":
+
             transaction_history()
 
         elif choice == "6":
+
             print("\nThank you for using Banking Management System.")
+            print("Goodbye!")
             break
 
         else:
-            print("\nInvalid choice. Please select 1-6.")
 
+            print("\nInvalid choice. Please select 1-6.")
+            pause()
+
+
+# ============================================================
+# PROGRAM START
+# ============================================================
 
 if __name__ == "__main__":
     main()

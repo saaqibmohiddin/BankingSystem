@@ -1,71 +1,60 @@
-# Banking Management System
+# 🏦 Banking Management System
 
-A console-based Banking Management System developed using Python and SQLite.
+A console-based Banking Management System developed using **Python and SQLite**.
 
-## Features
+This project demonstrates account management, secure PIN handling, deposits, withdrawals, balance checking, and transaction history using a relational database.
+
+---
+
+## 📌 Features
 
 - Create a new bank account
-- Generate unique account numbers
-- Create and confirm a 4-digit PIN
+- Secure PIN hashing
+- PIN confirmation during account creation
+- Account authentication
 - Deposit money
 - Withdraw money
 - Check account balance
 - View transaction history
+- Automatic transaction timestamps
 - Input validation
+- Insufficient balance checking
 - SQLite database storage
+- Database error handling
+- Transaction rollback on database errors
+- Indian Rupee currency formatting
 
-## Technologies Used
+---
 
-- Python
-- SQLite
-- SQL
+## 🛠️ Technologies Used
 
-## Project Structure
+- **Python 3**
+- **SQLite**
+- **SQL**
+- **Git & GitHub**
+
+### Python Modules
+
+- `sqlite3`
+- `hashlib`
+- `decimal`
+- `getpass`
+- `pathlib`
+
+---
+
+## 📂 Project Structure
 
 ```text
 BankingSystem/
+│
+├── screenshots/
+│   ├── main_menu.png
+│   ├── deposit.png
+│   └── transaction_history.png
 │
 ├── banking_system.py
 ├── database.py
 ├── README.md
 ├── .gitignore
-└── screenshots/
-    ├── main_menu.png
-    ├── deposit.png
-    └── transaction_history.png
-```
-
-## Screenshots
-
-### Main Menu
-
-![Main Menu](screenshots/main_menu.png)
-
-### Deposit Money
-
-![Deposit Money](screenshots/deposit.png)
-
-### Transaction History
-
-![Transaction History](screenshots/transaction_history.png)
-
-## How to Run
-
-1. Make sure Python is installed.
-2. Clone or download this repository.
-3. Open the project folder in VS Code.
-4. Run the following command:
-
-```bash
-python banking_system.py
-```
-
-5. Follow the instructions displayed in the terminal.
-
-## Database
-
-The project uses SQLite to store bank account and transaction information.
-
-## Author
-
-Saaqib Mohiddin
+└── bank.db
